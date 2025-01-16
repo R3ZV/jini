@@ -1,4 +1,6 @@
 const std = @import("std");
+const Priority = @import("job.zig").Priority;
+
 const Command = enum {
     Add,
     Priority,
@@ -43,27 +45,26 @@ const Command = enum {
         if (std.mem.eql(u8, arg, "-P") or std.mem.eql(u8, arg, "--print")) {
             return .Print;
         }
-        return .Help;
+
+        if (std.mem.eql(u8, arg, "--help")) {
+            return .Help;
+        }
+
+        return .Unknown;
     }
 };
 
-const Priority = enum {
-    Low,
-    Normal,
-    Heigh,
-};
-
 pub const CLI = struct {
-    alloc: std.mem.Allocator,
     command: Command = .Help,
     priority: Priority = .Normal,
     id: ?u8 = null,
     arg_err: ?[]const u8 = null,
-    args: []const []const u8,
-    root: []const u8,
+    root: []const u8 = "",
+    alloc: std.mem.Allocator,
+    args: [][]const u8,
 
-    pub fn new(args: []const []const u8, alloc: std.mem.Allocator) CLI {
-        return CLI{ .args = args, .root = "", .alloc = alloc };
+    pub fn new(args: [][]const u8, alloc: std.mem.Allocator) CLI {
+        return CLI{ .args = args, .alloc = alloc };
     }
 
     pub fn deinit(self: *CLI) void {
@@ -73,12 +74,32 @@ pub const CLI = struct {
         }
     }
 
+    pub fn getId(self: *CLI) ?u8 {
+        return self.id;
+    }
+
+    pub fn getPriority(self: *CLI) Priority {
+        return self.priority;
+    }
+
+    pub fn getRoot(self: *CLI) []const u8 {
+        return self.root;
+    }
+
+    pub fn hasErr(self: *CLI) bool {
+        return self.arg_err != null;
+    }
+
+    pub fn getErr(self: *CLI) ?[]const u8 {
+        return self.arg_err;
+    }
+
     pub fn parse(self: *CLI) !void {
         var i: usize = 0;
         while (i < self.args.len) : (i += 1) {
             const arg = self.args[i];
             const command = Command.fromStr(arg);
-            switch (self.command) {
+            switch (command) {
                 .Add => {
                     if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
                         i += 1;
@@ -86,13 +107,27 @@ pub const CLI = struct {
                         self.command = command;
                         self.root = try self.alloc.dupe(u8, self.args[i]);
                     } else {
-                        self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for {s} option.", .{arg});
+                        if (self.arg_err == null) {
+                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
+                        }
                     }
                 },
                 .List => {
                     self.command = command;
                 },
-                .Priority, .Suspend, .Resume, .Remove, .Info, .Print => {
+                .Priority => {
+                    if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
+                        i += 1;
+
+                        const id = try std.fmt.parseInt(u8, self.args[i], 10);
+                        self.id = id;
+                    } else {
+                        if (self.arg_err == null) {
+                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
+                        }
+                    }
+                },
+                .Suspend, .Resume, .Remove, .Info, .Print => {
                     if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
                         i += 1;
 
@@ -100,7 +135,9 @@ pub const CLI = struct {
                         const id = try std.fmt.parseInt(u8, self.args[i], 10);
                         self.id = id;
                     } else {
-                        self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for {s} option.", .{arg});
+                        if (self.arg_err == null) {
+                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
+                        }
                     }
                 },
                 .Help => {
@@ -108,27 +145,6 @@ pub const CLI = struct {
                 },
                 .Unknown => unreachable,
             }
-        }
-    }
-
-    fn exec(self: *const CLI) void {
-        if (self.arg_err) |err| {
-            std.debug.print("{s}\n", .{err});
-            return;
-        }
-
-        switch (self.command) {
-            .Add => {},
-            .Priority => {},
-            .Suspend => {},
-            .Resume => {},
-            .Remove => {},
-            .Info => {},
-            .List => {},
-            .Print => {},
-            .Help => {
-                self.help();
-            },
         }
     }
 
@@ -180,7 +196,7 @@ test "add_parse_err" {
         .command = .Help,
         .priority = .Normal,
         .args = &args,
-        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for -a option."),
+        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for option -a"),
         .id = null,
         .root = "",
     };
@@ -201,7 +217,7 @@ test "add_parse_err2" {
         .command = .Help,
         .priority = .Normal,
         .args = &args,
-        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for -a option."),
+        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for option -a"),
         .id = null,
         .root = "",
     };

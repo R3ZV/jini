@@ -25,7 +25,7 @@ $> jini -l
 ID PRI  Path               Progress Status   Details
 2  ***  /home/user/my_repo 45%      running  2306 files, 11 dirs
 
-$> jini -i 2
+$> jini -p 2
 Path               Usage Size Amount
 /home/user/my_repo 100% 100MB #########################################
 |
@@ -54,7 +54,7 @@ Resuming analysis task with ID '2', for '/home/user/my_repo'
 $> jini -r 2
 Removed analysis task with ID '2', status 'done' for '/home/user/my_repo'
 
-$> jini -i 2
+$> jini -p 2
 No existing analysis for task ID '2'
 ```
 
