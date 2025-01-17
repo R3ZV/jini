@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Priority = enum {
+pub const Priority = enum {
     Low,
     Normal,
     Heigh,
