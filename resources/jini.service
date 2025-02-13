@@ -1,0 +1,15 @@
+[Unit]
+Description=Disk analyzer daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/jini --config /etc/daemon-template/jini.conf
+ExecReload=/bin/kill -HUP $MAINPID
+User=root
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=jini
+
+[Install]
+WantedBy=multi-user.target

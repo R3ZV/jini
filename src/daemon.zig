@@ -1,28 +1,51 @@
 const std = @import("std");
 
-pub fn main() !void {
-    const pid = std.os.linux.fork();
-    if (pid == 0) {
-        std.debug.print("Child\n", .{});
-    } else {
-        std.debug.print("Parent exiting\n", .{});
-        std.posix.exit(1);
+const Signal = enum(u8) {
+    /// Terminate cleanly
+    SIGTERM,
+
+    /// Reload config file
+    SIGHUP,
+
+    SIGINT,
+
+    UNKNOWN,
+};
+
+pub const Daemon = struct {
+    const Self = @This();
+
+    running: bool = true,
+    reload: bool = false,
+
+    // signal(SIGINT, Daemon::signalHandler);
+    // signal(SIGTERM, Daemon::signalHandler);
+    // signal(SIGHUP, Daemon::signalHandler);
+
+    pub fn init() Self {
+        return Self{};
     }
-    std.debug.print("New session for child\n", .{});
-    if (std.os.linux.setsid() < 0) {
-        defer std.debug.print("Session failed\n", .{});
-        std.posix.exit(1);
+
+    pub fn check_reload(self: *Self) bool {
+        if (self.reload) {
+            self.handle_reload();
+            self.reload = false;
+        }
+
+        return self.running;
     }
 
-    try std.posix.chdir("/");
-
-    std.posix.close(std.posix.STDIN_FILENO);
-    std.posix.close(std.posix.STDOUT_FILENO);
-    std.posix.close(std.posix.STDERR_FILENO);
-
-    while (true) {
-        // TODO: daemon specific
+    pub fn handle_reload(self: *Self) void {
+        _ = self;
+        std.debug.print("Reloading...");
     }
 
-    std.os.linux.exit(0);
-}
+    pub fn handle_signals(self: *Self, signal: u32) void {
+        const variant: Signal = @enumFromInt(signal);
+        switch (variant) {
+            .SIGTERM, .SIGINT => self.running = false,
+            .SIGHUP => self.reload = true,
+            .UNKNOWN => unreachable,
+        }
+    }
+};
