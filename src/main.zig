@@ -1,19 +1,34 @@
 const std = @import("std");
-const CLI = @import("cli.zig").CLI;
-const daemon = @import("daemon.zig").daemon;
 
-pub fn main() noreturn {
-    var daemon = daemon.init();
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    const args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, args);
 
-    var count: u32 = 0;
-    while (daemon.running) {
-        daemon.check_reload();
-
-        count += 1;
-        std.debug.print("Count: {}\n", .{count});
+    if (args.len != 2) {
+        std.debug.print("Must use either --minus or --plus\n", .{});
+        return;
     }
 
-    std.debug.print("Daemon closed as expected!\n", .{});
+    if (!std.mem.eql(u8, args[1], "--minus") and
+        !std.mem.eql(u8, args[1], "--plus") and
+        !std.mem.eql(u8, args[1], "--q"))
+    {
+        std.debug.print("{s} is an invalid argument\n", .{args[1]});
+        std.debug.print("Must use either --minus, --plus, --q\n", .{});
+    }
+
+    const socket = try std.posix.socket(std.c.AF.UNIX, std.c.SOCK.STREAM, 0);
+    const addr = try std.net.Address.initUnix("/tmp/counter.sock");
+    try std.posix.connect(socket, &addr.any, addr.getOsSockLen());
+
+    const msg = args[1];
+    _ = try std.posix.send(socket, msg, 0);
+
+    var buff: [1024]u8 = undefined;
+    const read = try std.posix.recv(socket, &buff, 0);
+    std.debug.print("Count: {s}\n", .{buff[0..read]});
 }
 
 // pub fn main() !void {

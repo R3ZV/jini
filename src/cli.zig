@@ -74,26 +74,6 @@ pub const CLI = struct {
         }
     }
 
-    pub fn getId(self: *CLI) ?u8 {
-        return self.id;
-    }
-
-    pub fn getPriority(self: *CLI) Priority {
-        return self.priority;
-    }
-
-    pub fn getRoot(self: *CLI) []const u8 {
-        return self.root;
-    }
-
-    pub fn hasErr(self: *CLI) bool {
-        return self.arg_err != null;
-    }
-
-    pub fn getErr(self: *CLI) ?[]const u8 {
-        return self.arg_err;
-    }
-
     pub fn parse(self: *CLI) !void {
         var i: usize = 0;
         while (i < self.args.len) : (i += 1) {
