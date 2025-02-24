@@ -1,211 +1,280 @@
 const std = @import("std");
-const Priority = @import("job.zig").Priority;
+const assert = std.debug.assert;
+const ArrayList = std.ArrayList;
+
+const PriorityLevel = enum {
+    Low,
+    Normal,
+    High,
+};
+
+const ParseError = error{
+    InvalidOption,
+    InvalidCommand,
+    InvalidArgument,
+    ExpectedArgument,
+};
+
+const OptionType = enum {
+    Help,
+    Priority,
+
+    fn from_str(arg: []const u8) ParseError!OptionType {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            return .Help;
+        }
+
+        if (std.mem.eql(u8, arg, "--priority") or std.mem.eql(u8, arg, "-p")) {
+            return .Priority;
+        }
+        return ParseError.InvalidOption;
+    }
+};
+
+const Option = union(OptionType) {
+    Help: void,
+    Priority: PriorityLevel,
+};
 
 const Command = enum {
     Add,
-    Priority,
     Suspend,
     Resume,
     Remove,
     Info,
     List,
     Print,
-    Help,
-    Unknown,
+    Empty,
 
-    fn fromStr(arg: []const u8) Command {
-        if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--add")) {
+    fn from_str(arg: []const u8) ParseError!Command {
+        if (std.mem.eql(u8, arg, "add")) {
             return .Add;
         }
 
-        if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--priority")) {
-            return .Priority;
-        }
-
-        if (std.mem.eql(u8, arg, "-S") or std.mem.eql(u8, arg, "--suspend")) {
+        if (std.mem.eql(u8, arg, "suspend")) {
             return .Suspend;
         }
 
-        if (std.mem.eql(u8, arg, "-R") or std.mem.eql(u8, arg, "--resume")) {
+        if (std.mem.eql(u8, arg, "resume")) {
             return .Resume;
         }
 
-        if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--remove")) {
+        if (std.mem.eql(u8, arg, "remove")) {
             return .Remove;
         }
 
-        if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--info")) {
+        if (std.mem.eql(u8, arg, "info")) {
             return .Info;
         }
 
-        if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--list")) {
+        if (std.mem.eql(u8, arg, "list")) {
             return .List;
         }
 
-        if (std.mem.eql(u8, arg, "-P") or std.mem.eql(u8, arg, "--print")) {
+        if (std.mem.eql(u8, arg, "print")) {
             return .Print;
         }
 
-        if (std.mem.eql(u8, arg, "--help")) {
-            return .Help;
-        }
+        return ParseError.InvalidCommand;
+    }
+};
 
-        return .Unknown;
+const Token = union(enum) {
+    Cmd: Command,
+    Val: []const u8,
+    Opt: OptionType,
+};
+
+const Task = struct {
+    const Self = @This();
+
+    command: Command,
+    option: ?OptionType = null,
+    id: ?u8 = null,
+    priority: ?PriorityLevel = null,
+    root: ?[]const u8 = null,
+    err: ?[]const u8 = null,
+
+    pub fn init(command: Command) Self {
+        return Self{
+            .command = command,
+        };
+    }
+
+    pub fn resolve_option(self: *const Self) void {
+        assert(self.option != null);
+        switch (self.option.?) {
+            .Help => {
+                switch (self.command) {
+                    .Add => {
+                        std.debug.print("Add a new directory to be analyzed\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini add [OPTIONS] <DIR>\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mOptions:\x1b[0m\n", .{});
+                        std.debug.print("  -p, --priority <value>\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mInfo:\x1b[0m\n", .{});
+                        std.debug.print("  Value of 0 = Low\n", .{});
+                        std.debug.print("  Value of 1 = Normal (default)\n", .{});
+                        std.debug.print("  Value of 2 = High\n", .{});
+                    },
+                    .Resume => {
+                        std.debug.print("Resume a running analyzing job\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini resume <ID>\n", .{});
+                    },
+                    .Remove => {
+                        std.debug.print("Remove a running analyzing job\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini remove <ID>\n", .{});
+                    },
+                    .List => {
+                        std.debug.print("Print a list of all the analyzing jobs\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini remove <ID>\n", .{});
+                    },
+                    .Suspend => {
+                        std.debug.print("Suspend a running analyzing job\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini suspend <ID>\n", .{});
+                    },
+                    .Info => {
+                        std.debug.print("Print the status (pending, progress, done) of a job\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini info <ID>\n", .{});
+                    },
+                    .Print => {
+                        std.debug.print("Print the report of an analyzing job\n", .{});
+                        std.debug.print("\n", .{});
+                        std.debug.print("\x1b[4mUsage:\x1b[0m jini print <ID>\n", .{});
+                    },
+                    else => {},
+                }
+            },
+            .Priority => {},
+        }
     }
 };
 
 pub const CLI = struct {
-    command: Command = .Help,
-    priority: Priority = .Normal,
-    id: ?u8 = null,
-    arg_err: ?[]const u8 = null,
-    root: []const u8 = "",
+    const Self = @This();
+
     alloc: std.mem.Allocator,
     args: [][]const u8,
 
-    pub fn new(args: [][]const u8, alloc: std.mem.Allocator) CLI {
-        return CLI{ .args = args, .alloc = alloc };
+    pub fn new(args: [][]const u8, alloc: std.mem.Allocator) Self {
+        return Self{ .args = args, .alloc = alloc };
     }
 
-    pub fn deinit(self: *CLI) void {
-        self.alloc.free(self.root);
-        if (self.arg_err) |err| {
-            self.alloc.free(err);
-        }
-    }
+    pub fn tokenize(self: *const Self) !ArrayList(Token) {
+        var tokens = ArrayList(Token).init(self.alloc);
+        for (self.args, 0..) |arg, i| {
+            _ = i;
 
-    pub fn parse(self: *CLI) !void {
-        var i: usize = 0;
-        while (i < self.args.len) : (i += 1) {
-            const arg = self.args[i];
-            const command = Command.fromStr(arg);
-            switch (command) {
-                .Add => {
-                    if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
-                        i += 1;
-
-                        self.command = command;
-                        self.root = try self.alloc.dupe(u8, self.args[i]);
-                    } else {
-                        if (self.arg_err == null) {
-                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
-                        }
-                    }
-                },
-                .List => {
-                    self.command = command;
-                },
-                .Priority => {
-                    if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
-                        i += 1;
-
-                        const id = try std.fmt.parseInt(u8, self.args[i], 10);
-                        self.id = id;
-                    } else {
-                        if (self.arg_err == null) {
-                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
-                        }
-                    }
-                },
-                .Suspend, .Resume, .Remove, .Info, .Print => {
-                    if (i + 1 < self.args.len and Command.fromStr(self.args[i + 1]) == .Unknown) {
-                        i += 1;
-
-                        self.command = command;
-                        const id = try std.fmt.parseInt(u8, self.args[i], 10);
-                        self.id = id;
-                    } else {
-                        if (self.arg_err == null) {
-                            self.arg_err = try std.fmt.allocPrint(self.alloc, "jini: Missing argumet for option {s}", .{arg});
-                        }
-                    }
-                },
-                .Help => {
-                    self.command = command;
-                },
-                .Unknown => unreachable,
+            if (std.mem.startsWith(u8, arg, "-")) {
+                const option = try OptionType.from_str(arg);
+                try tokens.append(Token{ .Opt = option });
+            } else {
+                const command = Command.from_str(arg) catch {
+                    try tokens.append(Token{ .Val = arg });
+                    continue;
+                };
+                try tokens.append(Token{ .Cmd = command });
             }
         }
+
+        return tokens;
     }
 
-    fn help() void {
-        const message =
-            \\Usage: `jini [OPTION] [DIR]`
-            \\Analyze the space occupied by the directory at `[DIR]`
-            \\  -a, --add analyze a new directory path for disk usage
-            \\  -p, --priority set priority for the new analysis (works only with -a argument)
-            \\  -S, --suspend <id> suspend task with <id>
-            \\  -R, --resume <id> resume task with <id>
-            \\  -r, --remove <id> remove the analysis with the given <id>
-            \\  -i, --info <id> print status about the analysis with <id> (pending, progress, done)
-            \\  -l, --list list all analysis tasks, with their ID and the corresponding root
-            \\  -P, --print <id> print analysis report for those tasks that are "done"
-        ;
+    pub fn parse(self: *Self) !Task {
+        var task: Task = Task.init(.Empty);
+        const tokens = try self.tokenize();
+        defer tokens.deinit();
 
-        std.debug.print("{s}\n", .{message});
+        var i: usize = 0;
+        while (i < tokens.items.len) : (i += 1) {
+            const token = tokens.items[i];
+            switch (token) {
+                .Cmd => |cmd| {
+                    if (task.command != .Empty) continue;
+                    task.command = cmd;
+
+                    if (cmd != .List and cmd != .Empty) {
+                        if (i + 1 >= tokens.items.len) {
+                            task.option = .Help;
+                            // task.err = "error: Missing argument!\nUse '--help'\n";
+                            break;
+                        }
+
+                        if (tokens.items[i + 1] != .Val) {
+                            task.option = .Help;
+                            // task.err = "error: Invalid argument!\n Use '--help'\n";
+                            break;
+                        }
+                    }
+
+                    switch (cmd) {
+                        .Add => {
+                            task.root = try self.alloc.dupe(u8, tokens.items[i + 1].Val);
+                            task.priority = .Normal;
+                        },
+                        .Suspend,
+                        .Resume,
+                        .Remove,
+                        .Info,
+                        .Print,
+                        => {
+                            task.id = std.fmt.parseInt(u8, tokens.items[i + 1].Val, 10) catch {
+                                task.err = "error: Invalid argument!\n <id> should be a number\n";
+                                break;
+                            };
+                        },
+                        .List, .Empty => continue,
+                    }
+                },
+                .Opt => |opt| {
+                    if (task.option != null) continue;
+                    switch (opt) {
+                        .Help => task.option = .Help,
+                        .Priority => {
+                            if (i + 1 >= self.args.len) return ParseError.ExpectedArgument;
+                            const lvl = std.fmt.parseInt(u8, tokens.items[i + 1].Val, 10) catch {
+                                task.err = "error: Invalid argument!\n <priority> should be a number\n";
+                                break;
+                            };
+
+                            if (lvl > 2) {
+                                task.err = "error: <priority> should be a number between 0 and 2\n";
+                                break;
+                            }
+
+                            task.priority = @enumFromInt(lvl);
+                        },
+                    }
+                },
+                .Val => continue,
+            }
+        }
+        return task;
+    }
+
+    pub fn help() void {
+        std.debug.print("Disk usage analyzer\n", .{});
+        std.debug.print("\n", .{});
+        std.debug.print("\x1b[4mUsage:\x1b[0m jini <COMMAND>\n", .{});
+        std.debug.print("\n", .{});
+        std.debug.print("\x1b[4mCommands:\x1b[0m\n", .{});
+        std.debug.print("  add        Add a new directory to be analyzed \n", .{});
+        std.debug.print("  suspend    Suspend a running analyzing job\n", .{});
+        std.debug.print("  resume     Resume a suspended analyzing job\n", .{});
+        std.debug.print("  remove     Remove an analyzing job\n", .{});
+        std.debug.print("  info       Print the status (pending, progress, done) of a job\n", .{});
+        std.debug.print("  list       Print a list of all the analyzing jobs\n", .{});
+        std.debug.print("  print      Print the report of an analyzing job that is done\n", .{});
+        std.debug.print("\n", .{});
+        std.debug.print("\x1b[4mOptions:\x1b[0m\n", .{});
+        std.debug.print("  -h, --help       Print help\n", .{});
+        std.debug.print("  -v, --version    Print version\n", .{});
     }
 };
-
-const testing = std.testing;
-test "add_parse" {
-    const alloc = testing.allocator;
-    var args = [_][]const u8{ "-a", "/home/dev/repo" };
-    var want = CLI{
-        .alloc = alloc,
-        .command = .Add,
-        .priority = .Normal,
-        .args = &args,
-        .arg_err = null,
-        .id = null,
-        .root = try alloc.dupe(u8, "/home/dev/repo"),
-    };
-    defer want.deinit();
-
-    var cli = CLI.new(&args, alloc);
-    try cli.parse();
-    defer cli.deinit();
-
-    try testing.expectEqualDeep(want, cli);
-}
-
-test "add_parse_err" {
-    const alloc = testing.allocator;
-    var args = [_][]const u8{"-a"};
-    var want = CLI{
-        .alloc = alloc,
-        .command = .Help,
-        .priority = .Normal,
-        .args = &args,
-        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for option -a"),
-        .id = null,
-        .root = "",
-    };
-    defer want.deinit();
-
-    var cli = CLI.new(&args, alloc);
-    try cli.parse();
-    defer cli.deinit();
-
-    try testing.expectEqualDeep(want, cli);
-}
-
-test "add_parse_err2" {
-    const alloc = testing.allocator;
-    var args = [_][]const u8{ "-a", "-p" };
-    var want = CLI{
-        .alloc = alloc,
-        .command = .Help,
-        .priority = .Normal,
-        .args = &args,
-        .arg_err = try alloc.dupe(u8, "jini: Missing argumet for option -a"),
-        .id = null,
-        .root = "",
-    };
-    defer want.deinit();
-
-    var cli = CLI.new(&args, alloc);
-    try cli.parse();
-    defer cli.deinit();
-
-    try testing.expectEqualDeep(want, cli);
-}

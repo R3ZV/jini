@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Priority = enum {
+const Priority = enum {
     Low,
     Normal,
     Heigh,
@@ -25,13 +25,13 @@ const Job = struct {
         };
     }
 
-    pub fn suspendJob(self: *Job) void {
+    pub fn suspend_job(self: *Job) void {
         if (self.status == .Running) {
             self.status = .Suspended;
         }
     }
 
-    pub fn resumeJob(self: *Job) void {
+    pub fn resume_job(self: *Job) void {
         if (self.status == .Suspended) {
             self.status = .Running;
         }
@@ -64,7 +64,7 @@ const Job = struct {
     }
 };
 
-pub fn removeJob(jobs: std.ArrayList([]const Job), id: u8) bool {
+pub fn remove_job(jobs: std.ArrayList([]const Job), id: u8) bool {
     var idx: ?usize = null;
     for (jobs.items) |job| {
         if (job.id == id) {
@@ -78,7 +78,7 @@ pub fn removeJob(jobs: std.ArrayList([]const Job), id: u8) bool {
     return false;
 }
 
-pub fn getById(jobs: std.ArrayList([]const Job), id: u8) ?Job {
+pub fn get_by_id(jobs: std.ArrayList([]const Job), id: u8) ?Job {
     for (jobs.items) |job| {
         if (job.id == id) {
             return job;
