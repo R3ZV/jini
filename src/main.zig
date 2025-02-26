@@ -17,6 +17,7 @@ pub fn main() !void {
 
     var cli = CLI.new(args.items, alloc);
     const task = try cli.parse();
+    defer task.deinit();
 
     if (task.err != null and task.option == null) {
         std.debug.print("{s}", .{task.err.?});
@@ -110,4 +111,8 @@ pub fn main() !void {
         },
         .Empty => {},
     }
+}
+
+test {
+    _ = @import("cli.zig");
 }

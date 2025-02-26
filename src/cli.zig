@@ -89,16 +89,24 @@ const Task = struct {
     const Self = @This();
 
     command: Command,
+    alloc: std.mem.Allocator,
     option: ?OptionType = null,
     id: ?u8 = null,
     priority: ?PriorityLevel = null,
     root: ?[]const u8 = null,
     err: ?[]const u8 = null,
 
-    pub fn init(command: Command) Self {
+    pub fn init(command: Command, alloc: std.mem.Allocator) Self {
         return Self{
             .command = command,
+            .alloc = alloc,
         };
+    }
+
+    pub fn deinit(self: *const Self) void {
+        if (self.root != null) {
+            self.alloc.free(self.root.?);
+        }
     }
 
     pub fn resolve_option(self: *const Self) void {
@@ -169,6 +177,8 @@ pub const CLI = struct {
 
     pub fn tokenize(self: *const Self) !ArrayList(Token) {
         var tokens = ArrayList(Token).init(self.alloc);
+        errdefer tokens.deinit();
+
         for (self.args, 0..) |arg, i| {
             _ = i;
 
@@ -187,8 +197,10 @@ pub const CLI = struct {
         return tokens;
     }
 
-    pub fn parse(self: *Self) !Task {
-        var task: Task = Task.init(.Empty);
+    pub fn parse(self: *const Self) !Task {
+        var task: Task = Task.init(.Empty, self.alloc);
+        errdefer task.deinit();
+
         const tokens = try self.tokenize();
         defer tokens.deinit();
 
@@ -203,13 +215,11 @@ pub const CLI = struct {
                     if (cmd != .List and cmd != .Empty) {
                         if (i + 1 >= tokens.items.len) {
                             task.option = .Help;
-                            // task.err = "error: Missing argument!\nUse '--help'\n";
                             break;
                         }
 
                         if (tokens.items[i + 1] != .Val) {
                             task.option = .Help;
-                            // task.err = "error: Invalid argument!\n Use '--help'\n";
                             break;
                         }
                     }
@@ -217,7 +227,7 @@ pub const CLI = struct {
                     switch (cmd) {
                         .Add => {
                             task.root = try self.alloc.dupe(u8, tokens.items[i + 1].Val);
-                            task.priority = .Normal;
+                            if (task.priority == null) task.priority = .Normal;
                         },
                         .Suspend,
                         .Resume,
@@ -278,3 +288,120 @@ pub const CLI = struct {
         std.debug.print("  -v, --version    Print version\n", .{});
     }
 };
+
+const testing = std.testing;
+
+test "parse_empty_add" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{"add"};
+    const want = Task{
+        .alloc = alloc,
+        .command = .Add,
+        .id = null,
+        .option = .Help,
+        .priority = null,
+        .root = null,
+        .err = null,
+    };
+
+    const cli = CLI.new(&args, alloc);
+    const task = try cli.parse();
+    defer task.deinit();
+
+    try testing.expectEqualDeep(want, task);
+}
+
+test "parse_add" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "add", "/home/user/proj", "--priority", "2" };
+    const want = Task{
+        .alloc = alloc,
+        .command = .Add,
+        .id = null,
+        .option = null,
+        .priority = .High,
+        .root = "/home/user/proj",
+        .err = null,
+    };
+
+    const cli = CLI.new(&args, alloc);
+    const task = try cli.parse();
+    defer task.deinit();
+
+    try testing.expectEqualDeep(want, task);
+}
+
+test "parse_add_invalid_value" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "add", "/home/user/proj", "--priority", "3" };
+    const cli = CLI.new(&args, alloc);
+    const want = Task{
+        .alloc = alloc,
+        .command = .Add,
+        .id = null,
+        .option = null,
+        .priority = .Normal,
+        .root = "/home/user/proj",
+        .err = "error: <priority> should be a number between 0 and 2\n",
+    };
+
+    const task = try cli.parse();
+    defer task.deinit();
+    try testing.expectEqualDeep(want, task);
+}
+
+test "add_priority_not_a_number" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "add", "/home/user/proj", "--priority", "f" };
+    const cli = CLI.new(&args, alloc);
+    const want = Task{
+        .alloc = alloc,
+        .command = .Add,
+        .id = null,
+        .option = null,
+        .priority = .Normal,
+        .root = "/home/user/proj",
+        .err = "error: Invalid argument!\n <priority> should be a number\n",
+    };
+
+    const task = try cli.parse();
+    defer task.deinit();
+    try testing.expectEqualDeep(want, task);
+}
+
+test "parse_add_reverse_order" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "-p", "2", "add", "/home/user/proj" };
+    const cli = CLI.new(&args, alloc);
+    const want = Task{
+        .alloc = alloc,
+        .command = .Add,
+        .id = null,
+        .option = null,
+        .priority = .High,
+        .root = "/home/user/proj",
+        .err = null,
+    };
+
+    const task = try cli.parse();
+    defer task.deinit();
+    try testing.expectEqualDeep(want, task);
+}
+
+test "parse_add_invalid_option" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "add", "/home/user/proj", "--pro", "4" };
+    const cli = CLI.new(&args, alloc);
+
+    const task = cli.parse();
+    try testing.expectEqualDeep(ParseError.InvalidOption, task);
+}
+
+test "parse_add_invalid_argument" {
+    const alloc = testing.allocator;
+    var args = [_][]const u8{ "add", "/home/user/proj", "--priority" };
+    const cli = CLI.new(&args, alloc);
+
+    const task = cli.parse();
+    try testing.expectEqualDeep(ParseError.ExpectedArgument, task);
+}
